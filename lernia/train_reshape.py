@@ -178,6 +178,17 @@ def factorize(X):
     X = X.replace(float("Nan"),0)
     return X
 
+def categorize(y):
+    """from categories to matrix"""
+    from sklearn.preprocessing import OneHotEncoder
+    enc = OneHotEncoder(handle_unknown='ignore')
+    Y = np.reshape(y,(y.shape[0],1))
+    enc.fit(Y)
+    Y = enc.transform(Y).toarray()
+    print('elements per category')
+    print(Y.sum(axis=0))
+    return Y
+
 def applyBackfold(X):
     """add the margin to the matrix mirroring the boundary"""
     # X = np.vstack((X[-2,],X[-1,],X,X[0,],X[1,],X[2,]))

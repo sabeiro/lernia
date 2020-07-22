@@ -40,8 +40,10 @@ def plotHist(y,nBin=7,threshold=2.5,lab="",isLog=False,ax=None):
         plt.xscale('log',basex=10)
         plt.yscale('log',basey=10)
 
-def featureImportance(X,y):
+def featureImportance(X,y,ax=None):
     """display feature importance"""
+    if ax == None:
+        fig, ax = plt.subplots(1,1)
     import xgboost as xgb
     import operator
     X_train = X
@@ -104,18 +106,19 @@ def plotBoxFeat(c_M,y):
     ax[1,1].set_ylim(0,6.)
     plt.show()
 
-def plotFeatCorr(t_M):
+def plotFeatCorr(t_M,ax=None):
+    if ax == None:
+        fig, ax = plt.subplots(1,1,figsize=(10,8))
     """plot correlation in feature matrix"""
     corMat = t_M.corr()
     corrs = corMat.sum(axis=0)
     corr_order = corrs.argsort()[::-1]
     corMat = corMat.loc[corr_order.index,corr_order.index]
-    plt.figure(figsize=(10,8))
     ax = sns.heatmap(corMat, vmax=1, square=True,annot=True,cmap='RdYlGn')
     plt.title('Correlation matrix between the features')
     plt.xticks(rotation=15)
     plt.yticks(rotation=45)
-    plt.show()
+    return ax
 
 def plotFeatCorrScatter(t_M):
     """plot correlation + scatter matrix"""
@@ -540,7 +543,31 @@ def plotRadar(poi,tL,idField="id_poi"):
         plt.legend(loc='right', bbox_to_anchor=(0., 0.1))
     plt.show()
 
-def radarGrid(X,cL):
+def singleRadar(x,y1,ax=None,color="#888888",label=""):
+    """single radar plot"""
+    if ax == None:
+        fig, ax = plt.subplots(1,1, polar=True)
+    N = len(x)
+    x_as = [n / float(N) * 2 * np.pi for n in range(N)]
+    y = list(y1) + list(y1[:1])
+    x_as += x_as[:1]
+    ax.set_theta_offset(np.pi / 2)
+    ax.set_theta_direction(-1)
+    ax.set_rlabel_position(0)
+    ax.xaxis.grid(True, color=color, linestyle='solid', linewidth=0.5)
+    ax.yaxis.grid(True, color=color, linestyle='solid', linewidth=0.5)
+    ax.set_yticks([],[])
+    plt.xticks(x_as[:-1], [])
+    ax.plot(x_as, y, linewidth=0, linestyle='solid', zorder=3)
+    ax.fill(x_as, y, 'b', alpha=0.3,label=label,color=color)
+    ax.set_xticklabels(x,size=7)
+    # ax.set_rlabel_position(0)
+    # ax.fill(theta,X[i],label=labL[i],color=colL[i],linewidth=3,alpha=.4)
+    # ax.set_xticklabels(cL,size=7)
+    # ax.set_yticks([],[])
+    return ax
+    
+def radarGrid(X,cL,labL=[None]):
     """radar plots in a grid from a matrix"""
     N = X.shape[1]
     N_col = int(np.sqrt(X.shape[0]))
@@ -549,15 +576,16 @@ def radarGrid(X,cL):
     width = np.pi / 4 * np.random.rand(N)
     cmap = plt.get_cmap("Dark2")
     categories = list(cL)
-    colL = ['blue','red','green','yellow','purple','red','brown','olive','cyan','#ffaa44','#441188']
-
+    colL = ['blue','red','green','yellow','purple','brown','olive','cyan','#ffaa44','#441188']
+    colL = colL + colL
+    if labL[0] == None:
+        for i in range(X.shape[0]):
+            labL = "cluster"+str(i)
     for i in range(N_col*N_row):
+        plt.rc('axes', linewidth=0.5, edgecolor=colL[i])
         ax = plt.subplot(N_col,N_row,i+1,projection='polar')
-        ax.set_rlabel_position(0)
-        ax.fill(theta,X[i],label="cluster"+str(i),color=colL[i],linewidth=3,alpha=.4)
-        ax.set_xticklabels(cL,size=7)
-        ax.set_yticks([],[])
-        plt.legend(loc='right', bbox_to_anchor=(0., 0.1))
+        singleRadar(cL,X[i],ax=ax,color=colL[i],label=labL[i])
+        plt.legend(loc='right', bbox_to_anchor=(0.7, -0.1))
     plt.show()
 
 def plotJoin(vist,col_ref="bast",col1="via",col2="dirc"):
@@ -646,9 +674,10 @@ def plotPie(df,gL,isValue=True,ax=None):
     ax.pie(n,explode=tuple(explode),labels=labels,autopct='%1.1f%%',shadow=True,startangle=45)
     return ax
 
-def boxplotOverlap(X1,X2,cL,by=None,lab1='via',lab2='tile'):
+def boxplotOverlap(X1,X2,cL,by=None,lab1='via',lab2='tile',ax = None):
     import matplotlib.patches as mpatches
-    fig, ax = plt.subplots(1,1)
+    if ax == None:
+        fig, ax = plt.subplots(1,1)
     if by == None:
         bx1 = X1.boxplot(column=cL,ax=ax,return_type="dict")
         bx2 = X2.boxplot(column=cL,ax=ax,return_type="dict")

@@ -1,23 +1,28 @@
+"""
+train_executed:
+different stages regressors based on location or time series, iterative learning process for spatial and historical data
+"""
+
 import os, sys, gzip, random, csv, json, datetime,re
 import time
 import numpy as np
 import pandas as pd
 import scipy as sp
 import matplotlib.pyplot as plt
-import geomadi.train_model as tlib
-import geomadi.train_shape as shl
-import geomadi.train_score as t_f
-import geomadi.train_metric as t_m
-import geomadi.train_reshape as t_r
-import importlib
-import geomadi.series_stat as s_s
-from sklearn.metrics import mean_squared_error
 import sklearn as sk
+from sklearn.metrics import mean_squared_error
 from sklearn.tree import DecisionTreeRegressor
 from sklearn.ensemble import BaggingRegressor
-import geomadi.train_score as t_s
+import lernia.train_model as tlib
+import lernia.train_shape as shl
+import lernia.train_score as t_f
+import lernia.train_metric as t_m
+import lernia.train_reshape as t_r
+import lernia.train_score as t_s
+import albio.series_stat as s_s
 
 def prepLearningSet(g,dateL):
+    """pivot and merge datasets, hourly resolution"""
     tL = ['wday','cloudCover','humidity','icon','precipIntensity','precipProbability','visibility','lightDur','Tmin','Tmax',"daily_sum"]
     Xg1 = g.pivot_table(index="day",columns="hour",values="act",aggfunc=np.sum).replace(float("Nan"),0)
     Xg2 = g.pivot_table(index="day",columns="hour",values="ref",aggfunc=np.sum).replace(float("Nan"),0)
@@ -39,7 +44,73 @@ def prepLearningSet(g,dateL):
     X = shl.shapeLib(X).calcPCA()[:,:6]
     return X, Xd, X1, X2, Xg1, Xd1['value'].values, Xd2['value'].values
 
+def prepLearningSetDay(tist,dateL,tL=None):
+    """preparing learning set, daily resolution"""
+    if tL == None:
+        tL = ['wday','cloudCover','humidity','icon','precipIntensity','precipProbability','visibility','lightDur','Tmin','Tmax',"daily_sum"]
+    Xd1 = tist[['day','act']].groupby("day").agg(sum)
+    Xd2 = tist[['day','ref']].groupby("day").agg(sum)
+    Xd = Xd1.reset_index().drop(columns="act")
+    Xd = pd.merge(Xd,dateL,on="day",how="left")
+    Xd = Xd[tL]
+    Xd.loc[:,"icon"], _ = pd.factorize(Xd['icon'])
+    Xd = np.array(Xd.values)
+    Xd = np.nan_to_num(Xd)
+    Xd = shl.shapeLib(Xd).calcPCA()[:,:6]
+    return Xd, Xd1['act'].values, Xd2['ref'].values
+
+def joinSource(sact,tist,how="inner",idField="id_poi",isSameTime=True):
+    """join predictors with outcomes"""
+    hL = [x for x in tist.columns if bool(re.search("T",x))]
+    hL1 = [x for x in sact.columns if bool(re.search("T",x))]
+    if isSameTime:
+        hL = sorted(list(set(hL) & set(hL1)))
+        hL1 = sorted(list(set(hL) & set(hL1)))
+    act = pd.melt(sact,value_vars=hL1,id_vars=idField)
+    gact = act.groupby([idField,"variable"]).agg(np.sum).reset_index()
+    gact.columns = [idField,"time","value"]
+    vist = pd.melt(tist,value_vars=hL,id_vars=idField)
+    vist.columns = [idField,"time","value"]
+    gist = vist.groupby([idField,"time"]).agg(np.sum).reset_index()
+    gact.loc[idField] = gact[idField].astype(str)
+    vist.loc[idField] = vist[idField].astype(str)
+    act = pd.merge(gact,gist,on=[idField,"time"],how=how)
+    act.columns = [idField,"time","act","ref"]
+    return act
+
+def concatSource(pact,tist,how="inner",idField="id_poi",varName="source"):
+    """join predictors with outcomes"""
+    hL = [x for x in tist.columns if bool(re.search("T",x))]
+    vist = pd.melt(tist,value_vars=hL,id_vars=idField)
+    vist.columns = [idField,"time",varName]
+    gist = vist.groupby([idField,"time"]).agg(np.sum).reset_index()
+    act = pd.merge(pact,gist,on=[idField,"time"],how=how)
+    return act
+
+def oneStageRegressor(tist,dateL,modName="all",modDir="train/",play=False):
+    """single stage regressor and scoring"""
+    tist = tist.replace(float('Nan'),0)
+    Xd, Xd1, Xd2 = prepLearningSetDay(tist,dateL)
+    if Xd.shape[0] == 0:
+        return [], [], False
+    if not play:
+        fit_w, corrLW = tlib.regressor(Xd,Xd1,Xd2,nXval=6,isShuffle=True)
+        tlib.saveModel(fit_w,modDir+"fitDay_"+modName+".pkl")
+    else:
+        try:
+            fit_w = tlib.loadModel(modDir+"fitDay_"+modName+".pkl")
+        except:
+            return [], [], False
+    r_quot = fit_w.predict(Xd)
+    corrW = Xd1*r_quot
+    corrD = pd.DataFrame({"day":np.unique(tist['day']),"fact":corrW/Xd1})
+    if play:
+        corrLW = [ sp.stats.pearsonr(corrW,Xd2)[0] ]
+    print("%10s %5s - r: %f" % (modName,"play" if play else "learn",np.mean(corrLW)) )
+    return corrD, corrLW, True
+
 def twoStageRegressor(g,dateL,modName="all",modDir="train/",play=False):
+    """regressor on weather + regressor on shape"""
     g = g.replace(float('Nan'),0)
     X, Xd, X1, X2, Xg1, Xd1, Xd2 = prepLearningSet(g,dateL)
     print("id_clust %s - corr %f" % (modName,sp.stats.pearsonr(Xd1,Xd2)[0]) )
@@ -76,6 +147,7 @@ def twoStageRegressor(g,dateL,modName="all",modDir="train/",play=False):
     return X1, X2, corrLW, corrLS, True
 
 def corrPerformance(X1,X2,corrLW,corrLS,modName):
+    """calculate performances on the different stages of learning"""
     diff = (X1['corr'].sum()-X2['value'].sum())/X2['value'].sum()
     y = X2.groupby("day").agg(sum)['value']#.values
     x1 = X1.groupby("day").agg(sum)['value']#.values
@@ -92,7 +164,8 @@ def corrPerformance(X1,X2,corrLW,corrLS,modName):
     scorL1 = pd.DataFrame({"day":X1['day'].values,"hour":X1["hour"].values,"act":X1["corr"].values,"ref":X2['value'].values,"quot":X1['fact'].values})
     return scorP1, scorL1
 
-def learnPlayHour(tist,dateL,play=False,idField="id_clust",modDir="train/"):
+def learnPlayHour(tist,dateL,play=False,idField="id_poi",modDir="train/"):
+    """learn countrywide + single poi"""
     modDir = modDir + idField + "/"
     t_start = time.clock()
     scorP = []
@@ -128,41 +201,8 @@ def learnPlayHour(tist,dateL,play=False,idField="id_clust",modDir="train/"):
     print("total time %.2f min - per poi %.2f sec" % (t_diff/60.,t_diff/NPoi) )
     return scorP, vist
 
-def prepLearningSetDay(tist,dateL):
-    tL = ['wday','cloudCover','humidity','icon','precipIntensity','precipProbability','visibility','lightDur','Tmin','Tmax',"daily_sum"]
-    Xd1 = tist[['day','act']].groupby("day").agg(sum)
-    Xd2 = tist[['day','ref']].groupby("day").agg(sum)
-    Xd = Xd1.reset_index().drop(columns="act")
-    Xd = pd.merge(Xd,dateL,on="day",how="left")
-    Xd = Xd[tL]
-    Xd.loc[:,"icon"], _ = pd.factorize(Xd['icon'])
-    Xd = np.array(Xd.values)
-    Xd = np.nan_to_num(Xd)
-    Xd = shl.shapeLib(Xd).calcPCA()[:,:6]
-    return Xd, Xd1['act'].values, Xd2['ref'].values
-
-def oneStageRegressor(tist,dateL,modName="all",modDir="train/",play=False):
-    tist = tist.replace(float('Nan'),0)
-    Xd, Xd1, Xd2 = prepLearningSetDay(tist,dateL)
-    if Xd.shape[0] == 0:
-        return [], [], False
-    if not play:
-        fit_w, corrLW = tlib.regressor(Xd,Xd1,Xd2,nXval=6,isShuffle=True)
-        tlib.saveModel(fit_w,modDir+"fitDay_"+modName+".pkl")
-    else:
-        try:
-            fit_w = tlib.loadModel(modDir+"fitDay_"+modName+".pkl")
-        except:
-            return [], [], False
-    r_quot = fit_w.predict(Xd)
-    corrW = Xd1*r_quot
-    corrD = pd.DataFrame({"day":np.unique(tist['day']),"fact":corrW/Xd1})
-    if play:
-        corrLW = [ sp.stats.pearsonr(corrW,Xd2)[0] ]
-    print("%10s %5s - r: %f" % (modName,"play" if play else "learn",np.mean(corrLW)) )
-    return corrD, corrLW, True
-
 def learnPlayDay(tist,dateL,play=False,idField="id_clust",modDir="train/"):
+    """learn or play on daily values"""
     t_start = time.clock() 
     modDir = modDir + idField + "/"
     corrD, corrLW, isSuccess = oneStageRegressor(tist,dateL,modName="countryDay",modDir=modDir,play=play)
@@ -195,6 +235,7 @@ def learnPlayDay(tist,dateL,play=False,idField="id_clust",modDir="train/"):
     return scorP, vist
 
 def learnPlayType(tist,dateL,play=False,idField="id_clust",modDir="train/"):
+    """learn/play distinguished by time"""
     t_start = time.clock() 
     modDir = modDir + "type" + "/"
     corrD, corrLW, isSuccess = oneStageRegressor(tist,dateL,modName="countryDay",modDir=modDir,play=play)
@@ -225,32 +266,6 @@ def learnPlayType(tist,dateL,play=False,idField="id_clust",modDir="train/"):
     NPoi = len(set(tist[idField]))
     print("total time %.2f min - per poi %.2f sec" % (t_diff/60.,t_diff/NPoi) )
     return scorP, vist
-
-def joinSource(sact,tist,how="inner",idField="id_poi",isSameTime=True):
-    hL = [x for x in tist.columns if bool(re.search("T",x))]
-    hL1 = [x for x in sact.columns if bool(re.search("T",x))]
-    if isSameTime:
-        hL = sorted(list(set(hL) & set(hL1)))
-        hL1 = sorted(list(set(hL) & set(hL1)))
-    act = pd.melt(sact,value_vars=hL1,id_vars=idField)
-    gact = act.groupby([idField,"variable"]).agg(np.sum).reset_index()
-    gact.columns = [idField,"time","value"]
-    vist = pd.melt(tist,value_vars=hL,id_vars=idField)
-    vist.columns = [idField,"time","value"]
-    gist = vist.groupby([idField,"time"]).agg(np.sum).reset_index()
-    gact.loc[idField] = gact[idField].astype(str)
-    vist.loc[idField] = vist[idField].astype(str)
-    act = pd.merge(gact,gist,on=[idField,"time"],how=how)
-    act.columns = [idField,"time","act","ref"]
-    return act
-
-def concatSource(pact,tist,how="inner",idField="id_poi",varName="source"):
-    hL = [x for x in tist.columns if bool(re.search("T",x))]
-    vist = pd.melt(tist,value_vars=hL,id_vars=idField)
-    vist.columns = [idField,"time",varName]
-    gist = vist.groupby([idField,"time"]).agg(np.sum).reset_index()
-    act = pd.merge(pact,gist,on=[idField,"time"],how=how)
-    return act
 
 def plotSum(act,isLoc=False,colList=['act','ref'],ax=None):
     labT = "display all locations sum"
@@ -360,17 +375,14 @@ def xvalRegressor(tist,idField,hL,sL):
         iN = len(iL)
         iValid = 0#int(iN*.8)
         clf = BaggingRegressor(DecisionTreeRegressor())
-        setL = g['day'] < '2019-02-15T'
-        setL = ([np.random.uniform(0,1) >.1  for x in range(g.shape[0])]) & (g['day'] < '2019-03-05T')
-        X, y = g[sL].values, g['ical'].values #g['ref'].values
+        setL = ([np.random.uniform(0,1) >.1  for x in range(g.shape[0])])
+        X, y = g[sL].values, g[idField].values 
         corL = []
         difL = []
         for l in range(10):
             fit_w = clf.fit(X[setL],y[setL])
             y_pred = fit_w.predict(X)
-            post = pd.DataFrame({idField:i,"ref":g['ref'].values,"ical":g['ical'].values,"act":y_pred,"day":g['day'].values})
-            setL = post['day'] > '2019-02-00T'
-            setL = post['day'] < '2019-02-15T'
+            post = pd.DataFrame({idField:i,"ref":g['ref'].values,"ical":g['ical'].values,"pred":y_pred,"day":g['day'].values})
             cor = sp.stats.pearsonr(post.loc[setL,"ical"],post.loc[setL,"act"])[0]
             if cor > 0.6:
                 break

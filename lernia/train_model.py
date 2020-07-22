@@ -113,9 +113,9 @@ class trainMod:
         """iterate and score over different parameters"""
         clf = self.modFirst(paramF)
         scorS = {}
-        t_start = time.clock()
+        t_start = time.perf_counter()
         predL, fitL, scorL = self.regMatrix(clf,trainL,testL)
-        scorS['time'] = time.clock()-t_start
+        scorS['time'] = time.perf_counter()-t_start
         scorS['cor'] = np.mean([x['cor'] for x in scorL if x['cor'] == x['cor']])
         scorS['err'] = np.mean([x['err'] for x in scorL if x['err'] == x['err']])
         self.model = clf
@@ -128,10 +128,10 @@ class trainMod:
         cor = -1.
         fitR = None
         for i in range(nIter):
-            t_start = time.clock()
+            t_start = time.perf_counter()
             clf, s = self.modPick(clf)
             predL, fitL, scorL = self.regMatrix(clf,trainL,testL)
-            s['time'] = time.clock()-t_start
+            s['time'] = time.perf_counter()-t_start
             s['cor'] = np.mean([x['cor'] for x in scorL if x['cor'] == x['cor']])
             s['err'] = np.mean([x['err'] for x in scorL if x['err'] == x['err']])
             scorS.append(s)
@@ -144,7 +144,7 @@ class trainMod:
     def perfCla(self,clf,trainL,testL):
         """perform a single classification"""
         print(clf['name'],clf['type'],clf['score'])
-        t_start = time.clock()
+        t_start = time.perf_counter()
         Nclass = len(np.unique(self.y))
         y = self.y
         if clf['type'] == "class" :
@@ -181,7 +181,7 @@ class trainMod:
         acc = sk.metrics.accuracy_score(y_test,mod.predict(X_test))
         y_predict = mod.predict(X_test) == y_test
         auc = sk.metrics.auc(x_pr,y_pr)## = np.trapz(fpr,tpr)
-        t_end = time.clock()
+        t_end = time.perf_counter()
         t_diff = t_end - t_start
         return mod, train_score, test_score, t_diff, x_pr, y_pr, auc, fsc, acc, cv
     
@@ -368,7 +368,7 @@ def regressorSingle(X,y,nXval=6,isShuffle=True,paramF="train.json"):
         fitL.append(fit_q)
     # if np.isnan(corrL)[0]:
     #     return fit_q, [0]        
-    if False: # pick a random model
+    if True: # pick a random model
         nRandom = int(nXval*np.random.uniform())
         fit_q = fitL[nRandom]
     else: # pick the best

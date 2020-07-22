@@ -22,7 +22,6 @@ from sklearn.decomposition import PCA
 from sklearn.ensemble import ExtraTreesClassifier
 from sklearn.tree import DecisionTreeRegressor
 from sklearn.ensemble import BaggingRegressor
-from sklearn.externals import joblib
 from sklearn.feature_selection import SelectKBest
 from sklearn.feature_selection import chi2
 from sklearn.gaussian_process import GaussianProcessClassifier
@@ -195,7 +194,7 @@ othCla = [
     ##naive bayesias
     ,sk.naive_bayes.GaussianNB(priors=None)
     ##quadratic discriminant
-    ,sk.discriminant_analysis.QuadraticDiscriminantAnalysis(priors=None, reg_param=0.0,store_covariances=False, tol=0.0001)
+    ,sk.discriminant_analysis.QuadraticDiscriminantAnalysis(priors=None, reg_param=0.0, tol=0.0001)
     ,sk.linear_model.LinearRegression(copy_X=True, fit_intercept=True, n_jobs=1, normalize=False)
     ##ada boost
     ,sk.ensemble.AdaBoostClassifier(algorithm='SAMME.R', base_estimator=None,learning_rate=1.0, n_estimators=50, random_state=None)

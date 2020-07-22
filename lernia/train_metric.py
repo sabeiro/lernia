@@ -9,7 +9,6 @@ import pandas as pd
 import scipy as sp
 import matplotlib.pyplot as plt
 import lernia.train_modelList as modL
-import statsmodels.api as sm
 import sklearn as sk
 from scipy.optimize import leastsq as least_squares
 
@@ -89,9 +88,10 @@ def linLeastSq(X,y):
     tml = modL.modelList()
     clf = tml.regL['elastic_cv']['mod']
     model = clf.fit(X,y)
-    return model.coef_
+    #import statsmodels.api as sm
     # model = sm.OLS(y,X).fit()
     # return model.params
+    return model.coef_
     if False:
         predictions = model.predict(X)
         X1 = np.c_[X,np.ones(X.shape[0])] # add bias term
