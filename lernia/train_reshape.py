@@ -73,10 +73,69 @@ def mergeDir(projDir,idField="id_poi"):
 def normPercentile(y,perc=[1,99]):
     """normalize the function within the first and the last percentile"""
     y1 = y[y==y]
-    norm = y1.max()
-    tmin = y1.min()
-    tmin, norm = np.percentile(y1,[1,99])
-    y = (y-tmin)/(norm-tmin)
+    ymax = y1.max()
+    ymin = y1.min()
+    ymin, ymax = np.percentile(y1,perc)
+    y = (y-ymin)/(ymax-ymin)
+    y[y < 0.] = float('nan')
+    y[y > 1.] = float('nan')
+    return y
+
+def normDf(X,perc=[1,99],lim=[0,1],tL=[None]):
+    """normalize the dataframe within the first and the last percentile and interpolate"""
+    if not any(tL):
+        tL = X.select_dtypes(include=['float64']).columns
+    normD = []
+    X1 = X.copy()
+    for x in tL:
+        y = X[x].values
+        nonan = y==y
+        y1 = y[nonan]
+        ymax = y1.max()
+        ymin = y1.min()
+        ymin, ymax = np.percentile(y1,perc)
+        y = (y-ymin)/(ymax-ymin)
+        y[y < 0.] = float('nan')
+        y[y > 1.] = float('nan')
+        y = y*(lim[1]-lim[0]) + lim[0]
+        indices = np.arange(len(y))
+        nonan = y==y
+        if sum(nonan) == 0:
+            X1.loc[:,x] = 0
+            continue
+        interp = np.interp(indices, indices[nonan], y[nonan])
+        X1.loc[:,x] = interp
+        normD.append({"column":x,"min":ymin,"max":ymax})
+    normD = pd.DataFrame(normD)
+    return X1, normD
+
+
+def diffDf(X1,tL=[None]):
+    """step difference of data frame"""
+    X = X1.copy()
+    if not any(tL):
+        tL = X.select_dtypes(include=['float64']).columns
+    for t in tL:
+        X.loc[:,t] = X[t] - X[t].shift(1)
+    return X[1:]
+
+
+def integralDf(X1,tL=[None]):
+    """step difference of data frame"""
+    X = X1.copy()
+    if not any(tL):
+        tL = X.select_dtypes(include=['float64']).columns
+    for t in tL:
+        X.loc[:,t] = X[t] + X[t].shift(1)
+    return X[1:]
+
+    
+def norm(y):
+    """normalize the function within the min and max"""
+    y1 = y[y==y]
+    ymax = y1.max()
+    ymin = y1.min()
+    y = (y-ymin)/(ymax-ymin)
     y[y < 0.] = float('nan')
     y[y > 1.] = float('nan')
     return y

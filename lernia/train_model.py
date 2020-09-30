@@ -167,11 +167,13 @@ class trainMod:
                 y_score = np.hstack(scoreL)
             y_score1 = y_test.ravel()
         else :
-            #y_score = y_score[:,1]
-            y_score = y_score.ravel()
+            y_score = y_score[:,1]
+            #y_score = y_score.ravel()
+            #y_score = y_score[:,0]
             y_score1 = label_binarize(y_test,classes=range(Nclass))
             y_score1 = y_score1.ravel()
-        # print(y_test.shape,y_score.shape,y_score1.shape)
+            #y_score1 = y_score1[:,0]
+        #print(y_test.shape,y_score.shape,y_score1.shape)
         x_pr, y_pr, _ = sk.metrics.roc_curve(y_score1,y_score)
         train_score = mod.score(X_train,y_train)
         test_score  = mod.score(X_test ,y_test )

@@ -14,6 +14,8 @@ from scipy.cluster.hierarchy import dendrogram, linkage
 from sklearn import linear_model
 import sklearn as sk
 import albio
+from sklearn.metrics.pairwise import euclidean_distances
+from collections import defaultdict 
 
 def selectNumeric(X):
     """selects only numeric features"""
@@ -21,13 +23,13 @@ def selectNumeric(X):
     numerical_vars = list(X.select_dtypes(include=numerics).columns)
     return X[numerical_vars]
 
-def variance(X):
+def variance(X,threshold=1.):
     """reduce dimensionality based on low variance"""
     p_M = sp.stats.describe(X)
     varL = np.sqrt(p_M.variance)/p_M.mean
     cSel = [x for x in range(X.shape[1])]
-    cNeg = [i for i,x in enumerate(varL) if np.isnan(x) or np.abs(x) < 1.]
-    T = np.delete(X,cNeg,axis=1)
+    cNeg = [i for i,x in enumerate(varL) if np.isnan(x) or np.abs(x) < threshold]
+    T = np.delete(np.array(X),cNeg,axis=1)
     return T, cNeg
 
 def std(X,n_tail=2):
@@ -44,12 +46,12 @@ def chi2(X,y):
     X_new = SelectKBest(chi2,k=2).fit_transform(X,y)
     return X_new
     
-def kmeans(X,n_clust=5):
+def kmeans(X,n_clust=5,isPlot=False):
     """cluster features by kmeans"""
     from sklearn.decomposition import PCA
     pca = PCA().fit(X)
     A_q = pca.components_.T
-    if False:
+    if isPlot:
         plt.imshow(A_q)
         plt.show()
         
@@ -58,7 +60,8 @@ def kmeans(X,n_clust=5):
     cluster_centers = kmeans.cluster_centers_
     dists = defaultdict(list)
     for i, c in enumerate(clusters):
-        dist = euclidean_distances(A_q[i, :], cluster_centers[c, :])[0][0]
+        #dist = euclidean_distances(A_q[i, :], cluster_centers[c, :])[0][0]
+        dist = sp.spatial.distance.euclidean(A_q[i, :], cluster_centers[c, :])
         dists[c].append((i, dist))
 
     return [sorted(f, key=lambda x: x[1])[0][0] for f in dists.values()]
@@ -73,11 +76,18 @@ def treeClas(X,y):
     X_new.shape
     return X_new
 
-def regression(X,y):
+def regression(X,y,isPlot=False):
     """evaluate feature importance with regression coefficients"""
     clf = linear_model.RidgeCV(alphas=[0.1, 1.0, 10.0])
     fit = clf.fit(X,y)
-    return fit.coef_
+    coef = pd.DataFrame(fit.coef_,index=X.columns)
+    coef.loc[:,'abs'] = coef[0].apply(lambda x: abs(x))
+    coef = coef.sort_values('abs',ascending=False)
+    if isPlot:
+        plt.bar(coef.index,coef[0])
+        plt.xticks(rotation=15)
+        plt.show()
+    return coef[0]
 
 def regQuadratic(y):
     """regression with a 4th grade polynomial"""
@@ -152,7 +162,7 @@ class clustLib():
         axarr[0,1].imshow(mat)
         plt.show()
         
-def featureRegularisation(X,y,method="lasso"):
+def featureRegularisation(X,y,method="lasso",isPlot=False):
     """swithces between ridge and lasso regression"""
     from sklearn.model_selection import train_test_split
     from sklearn.linear_model import Lasso, LogisticRegression
@@ -164,23 +174,35 @@ def featureRegularisation(X,y,method="lasso"):
     scaler.fit(X_train)
     X_train = scaler.transform(X_train)
     if method == 'lasso':
-        sel_ = SelectFromModel(LogisticRegression(C=1, penalty="l1"))
+        sel_ = SelectFromModel(LogisticRegression(C=1, penalty="l2",max_iter=500))
         sel_.fit(X_train, y_train)
         feat_weight = 1.*sel_.get_support()
     else: 
-        l1_logit = LogisticRegression(C=1, penalty='l2')
+        l1_logit = LogisticRegression(C=1, penalty='l2',max_iter=500)
         l1_logit.fit(X_train, y_train)
         feat_weight = l1_logit.coef_.sum(axis=0)
+    coef = pd.DataFrame(feat_weight,index=X.columns)
+    coef.loc[:,'abs'] = coef[0].apply(lambda x: abs(x))
+    coef = coef.sort_values('abs',ascending=False)
+    if isPlot:
+        plt.bar(coef.index,coef[0])
+        plt.xticks(rotation=15)
+        plt.show()
+
     return feat_weight
 
 def featureImportance(X,y,tL,method=0):
     from sklearn.datasets import make_classification
     from sklearn.ensemble import ExtraTreesClassifier
+    from sklearn.ensemble import AdaBoostRegressor
+    from sklearn.linear_model import SGDRegressor
+    from sklearn.ensemble import ExtraTreesClassifier
     from sklearn.feature_selection import RFE
     from sklearn.linear_model import LogisticRegression
     from sklearn.feature_selection import SelectKBest
     from sklearn.feature_selection import chi2
-    #from xgboost import XGBClassifier
+    from xgboost.sklearn import XGBRegressor
+    from xgboost import XGBClassifier
     modelN = 'gradBoost'
 
     if method == 0:
@@ -199,7 +221,7 @@ def featureImportance(X,y,tL,method=0):
 
     if method == 2: #recursive feature elimination
         modelN = 'logistic regression'
-        mod = LogisticRegression()
+        mod = LogisticRegression(max_inter=10)
         rfe = RFE(mod, 3)
         fit = rfe.fit(X, y)
         importances = fit.ranking_
@@ -207,7 +229,7 @@ def featureImportance(X,y,tL,method=0):
 
     if method == 3:
         modelN = 'X gradBoost'
-        mod = XGBClassifier()
+        mod = XGBRegressor()#XGBClassifier()
         fit = mod.fit(X, y)
         importances = mod.feature_importances_
         std = .01#np.apply_along_axis(np.std,0,fit.transform(X))

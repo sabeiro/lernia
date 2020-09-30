@@ -19,6 +19,16 @@ import lernia.train_reshape as t_r
 import lernia.train_score as t_c
 import matplotlib
 
+colorL = ["#B4aaaaf0", "#8b122870", "#6CAF3070", "#F8B19570", "#F6728070", "#C06C8470", "#6C5B7B70",
+          "#355C7D70", "#99B89870", "#2A363B70", "#67E68E70", "#9F53B570", "#3E671470", "#7FA8A370",
+          "#6F849470", "#38577770", "#5C527A70", "#E8175D30", "#47474730", "#36363630", "#A7226E30",
+          "#EC204930", "#F26B3830", "#F7DB4F30", "#2F959930", "#E1F5C430", "#EDE57430", "#F9D42330",
+          "#FC913A30", "#FF4E5030", "#E5FCC230", "#9DE0AD30", "#45ADA830", "#54798030", "#594F4F30",
+          "#FE436530", "#FC9D9A30", "#F9CDAD30", "#C8C8A930", "#83AF9B30"]
+
+colorL = ["#B4aaaa","#8b1228","#6CAF30","#F8B195","#F67280","#C06C84","#6C5B7B","#355C7D","#99B898","#2A363B","#67E68E","#9F53B5","#3E6714","#7FA8A3","#6F8494","#385777","#5C527A","#E8175D","#474747","#363636","#A7226E","#EC2049","#F26B38","#F7DB4F","#2F9599","#E1F5C4","#EDE574","#F9D423","#FC913A","#FF4E50","#E5FCC2","#9DE0AD","#45ADA8","#547980","#594F4F","#FE4365","#FC9D9A","#F9CDAD","#C8C8A9","#83AF9B"]
+
+
 def plotHist(y,nBin=7,threshold=2.5,lab="",isLog=False,ax=None):
     """plot histogram and its binning"""
     if ax == None:
@@ -315,7 +325,7 @@ def plotHistogram(y,nbin=20,label="metric",ax=None,isLog=False,bins=40):
         plt.show()
     return ax
 
-def plotTimeSeries(g,ax=None,hL=[None]):
+def plotTimeSeries(g,ax=None,t=[None],mode=""):
     """plot all time series in a data frame on different rows"""
     groups = list(range(g.shape[1]))
     i = 1
@@ -323,16 +333,18 @@ def plotTimeSeries(g,ax=None,hL=[None]):
     X1 = g.values
     if not ax:
         fig, ax = plt.subplots(1,1)
-    if any(hL):
-        t = t_r.day2time(hL)
-    else:
+    if not any(t):
         t = range(g.shape[0])
     for group in groups:
-        plt.subplot(len(groups), 1, i)
-        plt.plot(t,X1[:, group])
-        plt.title(cL[group], y=0.5, loc='right')
+        ax = plt.subplot(len(groups), 1, i)
+        if mode == "scatter": ax.scatter(t,X1[:, group],marker="o",alpha=0.03)
+        elif mode == "confidence": plotConfidenceInterval(X1[:, group],nInt=5,ax=ax)
+        elif mode == "binned": plotBinned(t,X1[:, group],ax=ax,isScatter=False)
+        else: ax.plot(t,X1[:, group],linewidth=2)
+        ax.set_title(cL[group], y=0.5, loc='right')
         i += 1
-    plt.xticks(rotation=15)
+        for tick in ax.get_xticklabels():
+            tick.set_rotation(15)
 
 def plotConfidenceInterval(y,ax=None,label="value",nInt=5,color="blue"):
     """plot a confidence interval and scatter points"""
@@ -349,17 +361,18 @@ def plotConfidenceInterval(y,ax=None,label="value",nInt=5,color="blue"):
     ax.legend()
     return ax
 
-def plotBinned(df,col_y="act",col_bin="time",ax=None,isScatter=False,color="blue",label="series",alpha=0.25):
+def plotBinned(t,y,ax=None,isScatter=False,color="blue",label="series",alpha=0.25):
     """plot average and confindence interval on bins"""
+    df = pd.DataFrame({"y":y,"t":t})
     def clampF(x):
-        return pd.Series({"y":np.mean(x[col_y]),"sy":np.std(x[col_y])})
-    dg = df.groupby(col_bin).apply(clampF).reset_index()
+        return pd.Series({"y":np.nanmean(x["y"]),"sy":np.std(x["y"])})
+    dg = df.groupby("t").apply(clampF).reset_index()
     if not ax:
         fig, ax = plt.subplots(1,1)
     if isScatter:
-        ax.scatter(x,y,color=color,marker="+",label=label,alpha=.25)
-    ax.plot(dg[col_bin],dg['y'],color=color,linestyle='-.',lw=2,label=label,alpha=.5)
-    ax.fill_between(dg[col_bin],dg['y']-dg['sy']*.5,dg['y']+dg['sy']*.5,alpha=alpha,color=color)
+        ax.scatter(t,y,color=color,marker="+",label=label,alpha=alpha)
+    ax.plot(dg["t"],dg['y'],color=color,linestyle='-.',lw=2,label=label,alpha=.5)
+    ax.fill_between(dg["t"],dg['y']-dg['sy']*.5,dg['y']+dg['sy']*.5,alpha=0.15,color=color)
     return ax
     
 
@@ -373,6 +386,21 @@ def plotOccurrence(y,ax=None):
             tick.set_rotation(15)
     return ax
     
+def plotHeatmap(X,labV=[None],ax=None,vmin=-1,vmax=1,cmap=None):
+    """plot a correlation heatmap"""
+    if ax == None:
+        fig, ax = plt.subplots(1,1)
+    if any(labV):
+        X = pd.DataFrame(X,columns=labV,index=labV)
+    if cmap == None:
+        cmap = 'PiYG'
+    sns.heatmap(X, vmin=vmin, vmax=vmax, square=True,annot=True,cmap=cmap,ax=ax)
+    for tick in ax.get_xticklabels():
+        tick.set_rotation(35)
+    for tick in ax.get_yticklabels():
+        tick.set_rotation(15)
+
+
 def plotCorr(X,labV=None,ax=None):
     """plot a correlation heatmap"""
     if ax == None:
@@ -381,8 +409,13 @@ def plotCorr(X,labV=None,ax=None):
         corMat = pd.DataFrame(X,columns=labV).corr()
     else:
         corMat = np.corrcoef(X.T)
-    sns.heatmap(corMat, vmax=1, square=True,annot=True,cmap='RdYlGn',ax=ax)
+    sns.heatmap(corMat, vmin=-1,vmax=1, square=True,annot=True,cmap='PuOr',ax=ax)
+    for tick in ax.get_xticklabels():
+        tick.set_rotation(35)
+    for tick in ax.get_yticklabels():
+        tick.set_rotation(15)
 
+        
 def plotCrossMatrix(X,ax=[[None]]):
     """produce a plot of four different cross information kpi"""
     from sklearn.metrics.pairwise import chi2_kernel
@@ -438,8 +471,7 @@ def plotConfMat(y,y_pred):
     plt.xlabel("prediction")
     plt.ylabel("score")
     plt.imshow(cm)
-    plt.grid(b=None)
-    plt.show()
+    #plt.grid(b=None)
     return cm
 
 def plotHyperPerf(scorV):
@@ -528,7 +560,7 @@ def plotRadar(poi,tL,idField="id_poi"):
     cmap = plt.get_cmap("Dark2")
     categories=list(poi[idField])
     ax = plt.subplot(111, projection='polar')
-    plt.xticks(theta[:-1], categories, color='grey', size=8)
+    plt.xticks(theta[:], categories, color='grey', size=8)
     ax.set_rlabel_position(0)
     for j,i in enumerate(tL):
         y = poi[i]
@@ -546,7 +578,7 @@ def plotRadar(poi,tL,idField="id_poi"):
 def singleRadar(x,y1,ax=None,color="#888888",label=""):
     """single radar plot"""
     if ax == None:
-        fig, ax = plt.subplots(1,1, polar=True)
+        ax = plt.subplot(111, projection='polar')
     N = len(x)
     x_as = [n / float(N) * 2 * np.pi for n in range(N)]
     y = list(y1) + list(y1[:1])
@@ -554,17 +586,17 @@ def singleRadar(x,y1,ax=None,color="#888888",label=""):
     ax.set_theta_offset(np.pi / 2)
     ax.set_theta_direction(-1)
     ax.set_rlabel_position(0)
+    ax.set_ylim(0,max(y1))
     ax.xaxis.grid(True, color=color, linestyle='solid', linewidth=0.5)
     ax.yaxis.grid(True, color=color, linestyle='solid', linewidth=0.5)
-    ax.set_yticks([],[])
     plt.xticks(x_as[:-1], [])
     ax.plot(x_as, y, linewidth=0, linestyle='solid', zorder=3)
     ax.fill(x_as, y, 'b', alpha=0.3,label=label,color=color)
-    ax.set_xticklabels(x,size=7)
-    # ax.set_rlabel_position(0)
+    ax.set_xticklabels(x,size=14)
+    #ax.tick_params(axis='y',which='both',bottom=False,top=False,labelbottom=False)
+    ax.set_yticks([],[])
     # ax.fill(theta,X[i],label=labL[i],color=colL[i],linewidth=3,alpha=.4)
     # ax.set_xticklabels(cL,size=7)
-    # ax.set_yticks([],[])
     return ax
     
 def radarGrid(X,cL,labL=[None]):
