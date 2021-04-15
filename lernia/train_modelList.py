@@ -52,7 +52,7 @@ import sklearn.tree
 class modelList():
     """list of sklearn models to iterate"""
     catCla = [
-        {"active":True ,"name":"random_forest","type":"class","score":"ravel","mod":sk.ensemble.RandomForestClassifier()}
+        {"active":True ,"name":"random_forest  ","type":"class","score":"ravel","mod":sk.ensemble.RandomForestClassifier()}
         ,{"active":True,"name":"decision_tree  ","type":"class","score":"ravel","mod":sk.tree.DecisionTreeClassifier()}
         ,{"active":True,"name":"extra_tree     ","type":"class","score":"ravel","mod":sk.ensemble.ExtraTreesClassifier()}
         ,{"active":True,"name":"perceptron     ","type":"class","score":"ravel","mod":sk.neural_network.MLPClassifier()}
@@ -66,7 +66,7 @@ class modelList():
     ]
 
     regL = {
-        "decTree":{"active":True,"name":"decision tree reg","type":"class","score":"stack","mod":DecisionTreeRegressor(criterion='mse', max_depth=None, max_features=None, max_leaf_nodes=None, min_impurity_decrease=0.0, min_impurity_split=None, min_samples_leaf=1,min_samples_split=2, min_weight_fraction_leaf=0.0,presort=False, random_state=None, splitter='best')}
+        "decTree":{"active":True,"name":"decision tree reg","type":"class","score":"stack","mod":DecisionTreeRegressor(criterion='mse', max_depth=None, max_features=None, max_leaf_nodes=None, min_impurity_decrease=0.0, min_impurity_split=None, min_samples_leaf=1,min_samples_split=2, min_weight_fraction_leaf=0.0, random_state=None, splitter='best')}
         ,"bagReg":{"active":True,"name":"bagging regressor","type":"class","score":"stack","mod":BaggingRegressor(base_estimator=DecisionTreeRegressor(),bootstrap=True, bootstrap_features=False, max_features=1.0,max_samples=1.0, n_estimators=10, n_jobs=1, oob_score=False,random_state=None, verbose=0, warm_start=False)}
         ,"lasso":{"active":True,"name":"lasso","type":"class","score":"stack","mod":linear_model.Lasso(alpha=0.05,max_iter=1000,normalize=False,positive=True,precompute=True,random_state=None,selection='cyclic',tol=0.0001,warm_start=True)}
         ,"linear":{"active":True,"name":"linear","type":"class","score":"stack","mod":linear_model.LinearRegression(copy_X=True, fit_intercept=False,n_jobs=None,normalize=False)}
@@ -178,7 +178,7 @@ binCla = [
     ##dummy variables
     #sk.dummy.DummyClassifier(strategy='stratified',random_state=10)
     ##gradient boost
-    sk.ensemble.GradientBoostingClassifier(criterion='friedman_mse',init=None,learning_rate=tuneL['learning_rate'], loss=tuneL['loss'], max_depth=tuneL['max_depth'],max_features=tuneL['max_features'], max_leaf_nodes=None,min_impurity_decrease=1e-07, min_samples_leaf=1,min_samples_split=2, min_weight_fraction_leaf=0.0,n_estimators=tuneL['n_estimators'], presort='auto', random_state=10,subsample=1.0, verbose=0, warm_start=False)
+    sk.ensemble.GradientBoostingClassifier(criterion='friedman_mse',init=None,learning_rate=tuneL['learning_rate'], loss=tuneL['loss'], max_depth=tuneL['max_depth'],max_features=tuneL['max_features'], max_leaf_nodes=None,min_impurity_decrease=1e-07, min_samples_leaf=1,min_samples_split=2, min_weight_fraction_leaf=0.0,n_estimators=tuneL['n_estimators'], random_state=10,subsample=1.0, verbose=0, warm_start=False)
     ##support vector
     ,sk.svm.SVC(C=1.0,cache_size=200,class_weight=None,coef0=0.0,decision_function_shape=None,degree=3,gamma='auto',kernel='rbf',max_iter=-1,probability=True,random_state=0,shrinking=True,tol=0.001,verbose=False)
     ,sk.discriminant_analysis.LinearDiscriminantAnalysis(n_components=None, priors=None, shrinkage=None,solver='svd', store_covariance=False, tol=0.0001)

@@ -304,78 +304,90 @@ class regName(trainMod):
         clf.set_params(**paraB)
         return clf, paraB
 
-def regressor(X,vf,vg,nXval=False,isShuffle=True,paramF="train.json"):
-    """apply a regressor"""
-    tml = modL.modelList(paramF)
-    clf = tml.regL['bagReg']['mod']
-    decT = tml.regL['decTree']['mod']
-    clf.set_params(base_estimator=decT)
-    y = vg/vf
-    if False:
-        y = (vf - vg)/vf
-        r_tayl = (1.-r_taylor)
-    y[y != y] = 1.
-    y[y == float('Inf')] = 1.
-    N = len(X)
-    corrL = []
-    fitL = []
-    if isShuffle:
-        shuffleL = random.sample(range(N),N)
-    else :
-        shuffleL = list(range(N))        
-    X = np.array(X)
-    X = np.nan_to_num(X)
-    y = np.array(y)
-    for j in range(nXval): #cross validation
-        partS = [int(j/nXval*N),int((j+1)/nXval*N)]
-        idL = [x for x in range(0,partS[0])] + [x for x in range(partS[1],N)]
-        idL = shuffleL[0:partS[0]] + shuffleL[partS[1]:]
-        fit_q = clf.fit(X[idL,:],y[idL])
-        r_quot = fit_q.predict(X)
-        corr = vf*r_quot
-        corrL.append(sp.stats.pearsonr(corr,vg)[0])
-        fitL.append(fit_q)
-    if np.isnan(corrL)[0]:
-        return fit_q, [0]        
-    if False: # pick a random model
-        nRandom = int(nXval*np.random.uniform())
-        fit_q = fitL[nRandom]
-    else: # pick the best
-        fit_q = [fitL[x] for x in range(nXval) if corrL[x] == max(corrL)][0]
-    return fit_q, corrL
+def regressor(X,y,nXval=6,isShuffle=True,paramF="train.json"):
+        from sklearn.tree import DecisionTreeRegressor
+        from sklearn.ensemble import BaggingRegressor
+        tml = modL.modelList()
+        clf = tml.regL['bagReg']['mod']
+        decT = tml.regL['decTree']['mod']
+        clf.set_params(base_estimator=decT)
+        decT = DecisionTreeRegressor(criterion='mse', max_depth=None, max_features=None, max_leaf_nodes=None, min_impurity_decrease=0.0, min_impurity_split=None, min_samples_leaf=1,min_samples_split=2, min_weight_fraction_leaf=0.0, random_state=None, splitter='best')
+        clf = BaggingRegressor(base_estimator=decT,bootstrap=True, bootstrap_features=False, max_features=1.0,max_samples=1.0, n_estimators=10, n_jobs=1, oob_score=False,random_state=None, verbose=0, warm_start=False)
+        N = len(X)
+        X = np.array(X)
+        X = np.nan_to_num(X)
+        y = np.array(y)
+        corrL = []
+        fitL = []
+        if isShuffle:
+            shuffleL = random.sample(range(N),N)
+        else :
+            shuffleL = list(range(N))
+        if nXval == 1:
+            fit_q = clf.fit(X,y)
+            y_pred = fit_q.predict(X)
+            return fit_q, {}
+        
+        for j in range(nXval): #cross validation
+            partS = [int(j/nXval*N),int((j+1)/nXval*N)]
+            idL = [x for x in range(0,partS[0])] + [x for x in range(partS[1],N)]
+            idL = shuffleL[0:partS[0]] + shuffleL[partS[1]:]
+            fit_q = clf.fit(X[idL,:],y[idL])
+            y_pred = fit_q.predict(X)
+            corrL.append(t_s.calcMetrics(y,y_pred))
+            fitL.append(fit_q)
+            # if np.isnan(corrL)[0]:
+            #     return fit_q, [0]        
+        if True: # pick a random model
+            nRandom = int(nXval*np.random.uniform())
+            fit_q = fitL[nRandom]
+        else: # pick the best
+            fit_q = [fitL[x] for x in range(nXval) if corrL[x] == max(corrL)][0]
+        return fit_q, pd.DataFrame(corrL)
 
-def regressorSingle(X,y,nXval=6,isShuffle=True,paramF="train.json"):
-    """apply a regressor"""
-    tml = modL.modelList()
-    clf = tml.regL['bagReg']['mod']
-    decT = tml.regL['decTree']['mod']
-    clf.set_params(base_estimator=decT)
-    N = len(X)
-    corrL = []
-    fitL = []
-    if isShuffle:
-        shuffleL = random.sample(range(N),N)
-    else :
-        shuffleL = list(range(N))        
-    X = np.array(X)
-    X = np.nan_to_num(X)
-    y = np.array(y)
-    for j in range(nXval): #cross validation
-        partS = [int(j/nXval*N),int((j+1)/nXval*N)]
-        idL = [x for x in range(0,partS[0])] + [x for x in range(partS[1],N)]
-        idL = shuffleL[0:partS[0]] + shuffleL[partS[1]:]
-        fit_q = clf.fit(X[idL,:],y[idL])
-        y_pred = fit_q.predict(X)
-        corrL.append(sp.stats.pearsonr(y,y_pred)[0])
-        fitL.append(fit_q)
-    # if np.isnan(corrL)[0]:
-    #     return fit_q, [0]        
-    if True: # pick a random model
-        nRandom = int(nXval*np.random.uniform())
-        fit_q = fitL[nRandom]
-    else: # pick the best
-        fit_q = [fitL[x] for x in range(nXval) if corrL[x] == max(corrL)][0]
-    return fit_q, corrL
+def featKnockOut(reg,X,y,shuffle=True,portion=0.8,mode="predict"):
+    """feature knock out, recursively remove one feature at time and calculate performances"""
+    X1 = X.copy()
+    tL = X.columns
+    x_val = 16
+    perfL = []
+    print('all')
+    for j in range(x_val):
+        y_pred = reg.predict(X1)
+        b_pred = 1.*(y_pred > 0.5)
+        kpi = t_s.calcMetrics(y,b_pred)
+        kpi['feature'] = "all"
+        perfL.append(kpi)
+    for i in tL:
+        print(i)
+        X1 = X.copy()
+        for j in range(x_val):
+            X1.loc[:,i] = np.random.random(X1.shape[0])
+            y_pred = reg.predict(X1)
+            b_pred = 1.*(y_pred > 0.5)
+            kpi = t_s.calcMetrics(y,b_pred)
+            kpi['feature'] = "- " + i
+            perfL.append(kpi)
+    perfL = pd.DataFrame(perfL)
+    return perfL
+    
+def plotFeatImportance(perfL,ax=[None],isCorr=True):
+    """boxplot of scores per feature"""
+    if ax[0] == None:
+        if isCorr: fig, ax = plt.subplots(1,2)
+        else:
+            fig, ax = plt.subplots(1,1)
+            ax = [ax]
+        perfL.boxplot(by="feature",column="rel_err",ax=ax[0])
+    if isCorr:
+        perfL.boxplot(by="feature",column="cor",ax=ax[1])
+    for a in ax:
+        for tick in a.get_xticklabels():
+            tick.set_rotation(15)
+    return ax
+
+
+
 
 def saveModel(fit,fName):
     """save a model"""

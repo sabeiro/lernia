@@ -19,18 +19,17 @@ import lernia.train_reshape as t_r
 import lernia.train_score as t_c
 import matplotlib
 
-colorL = ["#B4aaaaf0", "#8b122870", "#6CAF3070", "#F8B19570", "#F6728070", "#C06C8470", "#6C5B7B70",
+colorL = ["#5555aaf0", "#8b122870", "#6CAF3070", "#F8B19570", "#F6728070", "#C06C8470", "#6C5B7B70",
           "#355C7D70", "#99B89870", "#2A363B70", "#67E68E70", "#9F53B570", "#3E671470", "#7FA8A370",
           "#6F849470", "#38577770", "#5C527A70", "#E8175D30", "#47474730", "#36363630", "#A7226E30",
           "#EC204930", "#F26B3830", "#F7DB4F30", "#2F959930", "#E1F5C430", "#EDE57430", "#F9D42330",
           "#FC913A30", "#FF4E5030", "#E5FCC230", "#9DE0AD30", "#45ADA830", "#54798030", "#594F4F30",
           "#FE436530", "#FC9D9A30", "#F9CDAD30", "#C8C8A930", "#83AF9B30"]
 
-colorL = ["#B4aaaa","#8b1228","#6CAF30","#F8B195","#F67280","#C06C84","#6C5B7B","#355C7D","#99B898","#2A363B","#67E68E","#9F53B5","#3E6714","#7FA8A3","#6F8494","#385777","#5C527A","#E8175D","#474747","#363636","#A7226E","#EC2049","#F26B38","#F7DB4F","#2F9599","#E1F5C4","#EDE574","#F9D423","#FC913A","#FF4E50","#E5FCC2","#9DE0AD","#45ADA8","#547980","#594F4F","#FE4365","#FC9D9A","#F9CDAD","#C8C8A9","#83AF9B"]
+colorL = ["#5555aa","#8b1228","#6CAF30","#F8B195","#F67280","#C06C84","#6C5B7B","#355C7D","#99B898","#2A363B","#67E68E","#9F53B5","#3E6714","#7FA8A3","#6F8494","#385777","#5C527A","#E8175D","#474747","#363636","#A7226E","#EC2049","#F26B38","#F7DB4F","#2F9599","#E1F5C4","#EDE574","#F9D423","#FC913A","#FF4E50","#E5FCC2","#9DE0AD","#45ADA8","#547980","#594F4F","#FE4365","#FC9D9A","#F9CDAD","#C8C8A9","#83AF9B"]
 
-
-def plotHist(y,nBin=7,threshold=2.5,lab="",isLog=False,ax=None):
-    """plot histogram and its binning"""
+def plotHist(y,nBin=7,nQuant=0,threshold=2.5,lab="",isLog=False,ax=None,isDense=False):
+    """plot histogram and color percentile"""
     if ax == None:
         fig, ax = plt.subplots(1,1)
     y = np.array(y)
@@ -38,18 +37,71 @@ def plotHist(y,nBin=7,threshold=2.5,lab="",isLog=False,ax=None):
     colors = plt.cm.BuPu(np.linspace(0, 0.5, 10))
     mHist ,xHist = np.histogram(y,bins=(nBin+1))
     y1, psum = t_r.binOutlier(y,nBin=nBin,threshold=threshold)
+    if nQuant > 0:
+        quantL = [100*(x/nQuant) for x in range(nQuant)] + [100]
+        v = np.percentile(y,quantL)
+        v[0] = min(y)*.9; v[-1] = max(y)*1.1
+        c = pd.cut(psum,v,labels=colorL[:nQuant])
+        c[c!=c] = colorL[0]
+    else:
+        c = colorL[0]
     mHist1 = np.bincount(y1)
     lenx = min(len(psum),len(mHist1))
     psum = psum[:lenx]
     mHist1 = mHist1[:lenx]
     delta = (psum[-1]-psum[1])/float(len(psum))
-    ax.bar(psum,mHist1,width=delta,label=lab,fill=False,alpha=0.5,color=colors[0],linewidth=2)
+    if isDense:
+        mHist1 = mHist1/sum(mHist1)
+    ax.bar(psum,mHist1,width=delta,fill=True,alpha=0.5,color=c,linewidth=2,label=lab)
     #plt.plot(psum[1:],mHist,label=lab,linewidth=2)
-    ax.legend()
+    #ax.legend()
     if isLog:
         plt.xscale('log',basex=10)
         plt.yscale('log',basey=10)
 
+def plotDensOverlap(featM,group="variable",yL="value",isOverall=True):
+    """Overlapping density plots"""
+    cL = colorL
+    j = 0
+    for i,g in featM.groupby([group]):
+        sns.kdeplot(g[yL],gridsize=int(180),color=cL[j],label=i,shade=True)
+        j += 1
+    if isOverall:
+        sns.distplot(featM[yL],hist=True,kde=True,bins=int(180/5),color='#0000BB60',hist_kws={'edgecolor':'black'},kde_kws={'linewidth': 4},label="overall")
+    plt.legend()
+
+        
+def plotDens3d(featL,group="grp",y="y"):
+    """plot a 3d histogram after groupby"""
+    from mpl_toolkits.mplot3d import Axes3D
+    from matplotlib.collections import PolyCollection
+    norm = len(set(featL[group]))
+    verts = []
+    xs, zs = [], []
+    xs = np.arange(0, 1, 0.025)
+    j = 0
+    for i,g in featL.groupby([group]):
+        ys = np.histogram(g[y],len(xs))[0]/g[y].sum()
+        ys[0], ys[-1] = 0, 0
+        verts.append(list(zip(xs, ys)))
+        j += 1
+        zs.append(j/norm)
+    ys = np.array(ys)
+    poly = PolyCollection(verts,facecolor=colorL[:j])
+    poly.set_edgecolor('black')
+    fig = plt.figure()
+    ax = fig.gca(projection='3d')
+    ax.add_collection3d(poly, zs=zs, zdir='y')
+    # ax.set_xlim3d(0, 10)
+    # ax.set_ylim3d(0., .3)
+    # plt.axis('off')
+    ax.grid(False)
+    ax.set_xticks([])
+    ax.set_yticks([])
+    ax.set_zticks([])
+    plt.grid(b=None)
+    ax.set_zlim3d(0, .3)
+        
 def featureImportance(X,y,ax=None):
     """display feature importance"""
     if ax == None:
@@ -345,6 +397,7 @@ def plotTimeSeries(g,ax=None,t=[None],mode=""):
         i += 1
         for tick in ax.get_xticklabels():
             tick.set_rotation(15)
+    return fig, ax
 
 def plotConfidenceInterval(y,ax=None,label="value",nInt=5,color="blue"):
     """plot a confidence interval and scatter points"""
@@ -401,12 +454,12 @@ def plotHeatmap(X,labV=[None],ax=None,vmin=-1,vmax=1,cmap=None):
         tick.set_rotation(15)
 
 
-def plotCorr(X,labV=None,ax=None):
+def plotCorr(X,labV=[None],ax=None,method="pearson"):
     """plot a correlation heatmap"""
     if ax == None:
         fig, ax = plt.subplots(1,1)
-    if labV:
-        corMat = pd.DataFrame(X,columns=labV).corr()
+    if any(labV):
+        corMat = pd.DataFrame(X,columns=labV).corr(method=method)
     else:
         corMat = np.corrcoef(X.T)
     sns.heatmap(corMat, vmin=-1,vmax=1, square=True,annot=True,cmap='PuOr',ax=ax)
@@ -464,15 +517,17 @@ def plotCrossMatrix(X,ax=[[None]]):
 
     plt.show()    
     
-def plotConfMat(y,y_pred):
+def plotConfMat(y,y_pred,ax=None):
     """plot confusion matrix"""
+    if ax == None:
+        fig, ax = plt.subplots(1,1)
     cm = confusion_matrix(y,y_pred)
     cm = np.array(cm)
-    plt.xlabel("prediction")
-    plt.ylabel("score")
-    plt.imshow(cm)
+    plotHeatmap(cm/cm.sum(),ax=ax)
+    ax.set_xlabel("prediction")
+    ax.set_ylabel("score")
     #plt.grid(b=None)
-    return cm
+    return cm, ax
 
 def plotHyperPerf(scorV):
     """plot a double boxplot showing the performances per hyperparameter"""
@@ -533,7 +588,7 @@ def plotParallel(frame, class_column, cols=None, ax=None, color=None, use_column
 
 def plotSankey(df,col_1="1",col_2="2",title="reshuffling"):
     """plot a sankey diagram"""
-    #from pySankey import sankey
+    from pySankey import sankey
     sankey.sankey(df[col_1],df[col_2],aspect=20,fontsize=12)
     plt.title(title)
     plt.show()
@@ -552,29 +607,40 @@ def plotSankeyFlow(df,col_1="1",col_2="2"):
     plt.legend(loc='lower right')
     plt.show()
 
-def plotRadar(poi,tL,idField="id_poi"):
+def plotRadar(featL,idGroup="week",idField="feature",idVal="value",isFill=False):
     """radar plot"""
-    N = poi.shape[0]
+    feat = featL.sort_values([idGroup,idField])
+    categories = list(np.unique(feat[idField]))
+    N = len(categories)
     theta = np.linspace(0.0, 2 * np.pi, N, endpoint=False)
     width = np.pi / 4 * np.random.rand(N)
+    maxy = max(feat[idVal])
     cmap = plt.get_cmap("Dark2")
-    categories=list(poi[idField])
     ax = plt.subplot(111, projection='polar')
     plt.xticks(theta[:], categories, color='grey', size=8)
     ax.set_rlabel_position(0)
-    for j,i in enumerate(tL):
-        y = poi[i]
-        y = (y - 0)/(max(y) - 0) 
-        y_up = np.repeat(np.percentile(y,75),N)
-        y_dw = np.repeat(np.percentile(y,25),N)
+    j = 0
+    if isFill:
+        featG = feat.groupby(idField).agg(np.mean)
+        meanL = featG[idVal]
+        featG = feat.groupby(idField).agg(np.std)
+        stdL = featG[idVal]
+        meanL = (meanL - 0)/(maxy - 0) 
+        stdL = (stdL - 0)/(maxy - 0) 
+        ax.fill_between(theta,meanL + stdL,meanL - stdL,alpha=.15,color=colorL[0])
+        
+    for i,g in feat.groupby(idGroup):
+        y = g[idVal]
+        y = (y - 0)/(maxy - 0) 
         color = matplotlib.colors.rgb2hex(cmap(j))
+        color = colorL[j]
         bars = ax.plot(theta, y,label=i,color=color)
-        ax.fill_between(theta,y_up,y_dw,alpha=.15,color=color)
-        ax.plot(theta,y_up,color=color,alpha=.25)
-        ax.plot(theta,y_dw,color=color,alpha=.25)
-        plt.legend(loc='right', bbox_to_anchor=(0., 0.1))
-    plt.show()
+        # ax.plot(theta,y,color=color,alpha=.25)
+        j = j + 1
+    ax.set_yticks([0.2,0.4,0.6,0.8],[])
+    plt.legend(loc='right', bbox_to_anchor=(-.0,.2))
 
+    
 def singleRadar(x,y1,ax=None,color="#888888",label=""):
     """single radar plot"""
     if ax == None:
@@ -730,4 +796,75 @@ def boxplotOverlap(X1,X2,cL,by=None,lab1='via',lab2='tile',ax = None):
     plt.xticks(rotation=15)
     plt.show()
 
+def joyplotOverlap(feat,cL,by=None,lab1='via',lab2='tile',ax = None):
+    import joypy
+    if by == None:
+        fig, ax = joypy.joyplot(feat,column=cL,xlim='own',ylim='own',figsize=(12,6),alpha=.5)
+    else:
+        feat.loc[:,by] = feat.loc[:,by].astype(int)
+        feat = feat.melt(id_vars=[by],value_vars=cL)
+        sorter = dict(zip(cL, range(len(cL))))
+        feat.loc[:,'rank'] = feat['variable'].map(sorter)
+        feat = feat.sort_values('rank')
+        fL = np.unique(feat[by])
+        vL = []
+        for i in fL:
+            var = by + "_" + str(i)
+            feat.loc[:,by+"_"+var] = float('nan')
+            setL = feat[by] == i
+            feat.loc[setL,var] = feat.loc[setL,"value"]
+            vL.append(var)
 
+        fig, ax = joypy.joyplot(feat,column=vL,by="rank",xlim='own',ylim='own',figsize=(12,6),alpha=.5,labels=cL)
+    return fig, ax
+
+def plotOccurrence(y,lim=30):
+    """bar plot for variable occurrence"""
+
+def heatmapHisto(convM,bins=20):
+    """plot an heatmap and the histogram of the x and y axis"""
+    from mpl_toolkits.axes_grid1 import make_axes_locatable
+    x = convM.sum(axis=1)
+    y = convM.sum(axis=0)
+    fig, axScatter = plt.subplots(figsize=(5.5, 5.5))
+    axScatter.imshow(convM)
+    #axScatter.set_aspect(1.)
+    divider = make_axes_locatable(axScatter)
+    axHistx = divider.append_axes("top", 1.2, pad=0.1, sharex=axScatter)
+    axHisty = divider.append_axes("right", 1.2, pad=0.1, sharey=axScatter)
+    axHistx.xaxis.set_tick_params(labelbottom=False)
+    axHisty.yaxis.set_tick_params(labelleft=False)
+    binwidth = 0.25
+    xymax = max(np.max(np.abs(x)), np.max(np.abs(y)))
+    lim = (int(xymax/binwidth) + 1)*binwidth
+    #bins = np.arange(-lim, lim + binwidth, binwidth)
+    axHistx.hist(x, bins=bins)
+    axHisty.hist(y, bins=bins, orientation='horizontal')
+    # axHistx.set_yticks([0, 50, 100])
+    # axHisty.set_xticks([0, 50, 100])
+
+def scatterRegression(featL,xL,yL):
+    """plot scatter points and regression"""
+    feat = featL.sort_values(yL)
+    for t in xL:
+        x, y = feat[yL], feat[t]
+        m, b = np.polyfit(x, y, 1)
+        plt.scatter(x,y,label=t)
+        plt.plot(x, m*x+b)
+    plt.legend()
+
+def boxplotMean(featL,x_lab="variable",y_lab="value",ax=None):
+    """boxplot and mean"""
+    import matplotlib.transforms as transforms
+    if ax == None:
+        fig, ax = plt.subplots()
+    featG = featL.groupby([x_lab]).agg(np.std).reset_index()
+    err = featG[y_lab].mean()
+    sns.pointplot(x=x_lab,y=y_lab,data=featL,linestyles='',scale=1,color='k',errwidth=err,capsize=0.2,markers='x',ax=ax)
+    offset = transforms.ScaledTranslation(5/72., 0, ax.figure.dpi_scale_trans)
+    trans = ax.collections[0].get_transform()
+    ax.collections[0].set_transform(trans + offset)
+    # sns.swarmplot(x=x_lab,y=y_lab,data=featL,edgecolor="black",linewidth=.9,ax=ax)
+    sns.boxplot(x=x_lab,y=y_lab, data=featL,saturation=1,ax=ax)
+    sns.pointplot(x=x_lab,y=y_lab,data=featL,linestyles='--',scale=0.4,color='k', errwidth=0, capsize=0, ax=ax)
+    return ax

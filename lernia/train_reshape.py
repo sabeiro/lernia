@@ -237,16 +237,27 @@ def factorize(X):
     X = X.replace(float("Nan"),0)
     return X
 
-def categorize(y):
+def categorize(y,isPlot=False):
     """from categories to matrix"""
     from sklearn.preprocessing import OneHotEncoder
+    cat = pd.DataFrame({"y":y})
+    cat.loc[:,"y"] = cat["y"].replace(float('nan'),'NA')
+    cat = cat.sort_values("y")
     enc = OneHotEncoder(handle_unknown='ignore')
-    Y = np.reshape(y,(y.shape[0],1))
+    Y = np.reshape(cat.y.values,(cat.shape[0],1))
     enc.fit(Y)
     Y = enc.transform(Y).toarray()
-    print('elements per category')
-    print(Y.sum(axis=0))
-    return Y
+    if isPlot:
+        y = Y.sum(axis=0)
+        l = np.unique(y)
+        plt.bar(l,y)
+        plt.show()
+    return Y[cat.index]
+
+def categorizeNum(y,isPlot=False):
+    """from categories to matrix"""
+    Y = categorize(y,isPlot=isPlot)
+    return Y.argmax(axis=1)
 
 def applyBackfold(X):
     """add the margin to the matrix mirroring the boundary"""
