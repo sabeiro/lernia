@@ -1,0 +1,154 @@
+import os, sys, gzip, random, json, datetime, re, io
+import pandas as pd 
+import numpy as np
+import matplotlib.pyplot as plt
+import scipy as sp
+
+dL = os.listdir(os.environ['LAV_DIR']+'/src/')
+sys.path = list(set(sys.path + [os.environ['LAV_DIR']+'/src/'+x for x in dL]))
+baseDir = os.environ['LAV_DIR']
+import lernia.train_reshape as t_r
+import lernia.train_viz as t_v
+import deep_lernia.train_keras as t_k
+import deep_lernia.train_longShort as tls
+import importlib
+
+folder = "august"
+folder = "modem"
+featL = pd.read_csv(baseDir + "/rem/raw/spike_"+folder+".csv.gz",compression="gzip")
+featL.loc[:,"from_peak"] = featL['from_peak'].apply(lambda x:  int( x*10 )/10. )
+featL = featL.sort_values(['series','from_peak'])
+xL = ['object_distance','brake_pressure','force_lon','wheel_speed','vehicle_ping','rtp_lost','rtp_late','modem_rtt','modem_tx','camera_jitter','room_ram','room_cpu','vehicle_ram','vehicle_cpu']
+xL = ['object_distance','force_lat','steering_wheel','wheel_speed','vehicle_ping','rtp_lost','rtp_late','modem_tx','vehicle_ram','vehicle_cpu']
+xL = [x for x in featL.columns if re.search("_si",x)]# + [x for x in featL.columns if re.search("_rss",x)]
+xL = xL + ['object_distance','brake_pressure','force_lon','wheel_speed','vehicle_ping','camera_jitter','room_ram','room_cpu','vehicle_ram','vehicle_cpu']
+#xL = ['force_lon','wheel_speed','camera_jitter','arrival_time-Cellular 1','arrival_time-Cellular 2','arrival_time-Cellular 3','arrival_time-Cellular 4','bytes-Cellular 1','bytes-Cellular 2','bytes-Cellular 3','bytes-Cellular 4']
+yL = ['joystick_latency','camera_latency']
+tL = yL + xL
+print('-----------------------norm----------------------------')
+importlib.reload(t_r)
+setL = featL['from_peak'].abs() < 16
+feat = featL.loc[setL]
+#feat = t_r.diffDf(feat,tL=tL)
+feat, normD = t_r.normDf(feat,perc=[2,98],lim=[-1,1],tL=tL)
+serAv = feat.groupby('from_peak').agg(np.nanmean).reset_index()
+n_in = 1
+
+if True:
+    print('------------------------------forecast-from-peak----------------------------')
+    importlib.reload(t_k)
+    importlib.reload(tls)
+    tK = tls.timeSeries(feat[tL])
+    #tK.scale(feature_range=(-1,1))
+    tK.loadModel(baseDir + "/rem/train/lstm_camera_tmp")
+    tK.model.compile(loss='mean_squared_error', optimizer='adam')
+    serL = np.unique(featL['series'])
+    
+    def forePeak(g1):
+        g = g1[:12]
+        X = g[tL].values
+        y_fore = tK.forecast(X,n_in=n_in)
+        t = g['from_peak'].values
+        max_camera = t[np.argmax(y_fore[:,1])]
+        max_joystick = t[np.argmax(y_fore[:,0])]
+        s = g['series'].values[0]
+        peak = {"series":s,"from_peak":x
+                ,"spike_camera":max(y_fore[:,1]),"spike_camera_10":max(y_fore[:10,1]),"spike_camera_6":max(y_fore[:6,1]),"spike_camera_4":max(y_fore[:4,1])
+                ,"spike_joystick":max(y_fore[:,0]),"max_camera":max_camera,"max_joystick":max_joystick}
+        fore = pd.DataFrame({"start":x,"joystick":X[:,0],"camera":X[:,1],"fore_camera":y_fore[:,1],"from_peak":g['from_peak'],"series":i})
+        return peak, fore
+    
+    foreL = []
+    peakL = []
+    j = 0
+    for i,g in feat.groupby('series'):
+        print("process %.2f" % float(j/len(serL)))
+        j += 1
+        for x in g['from_peak']:
+            g1 = g[g['from_peak'] > x]
+            if len(g1) == n_in - 1: break
+            peak, fore = forePeak(g1)
+            peakL.append(peak)
+            foreL.append(fore)
+        peakD = pd.DataFrame(peakL)
+        peakD.to_csv(baseDir + "/rem/raw/spike_forecast_sec_max.csv.gz",index=False)
+        
+    foreD = pd.concat(foreL)
+    foreD.to_csv(baseDir + "/rem/raw/spike_forecast_sec.csv.gz",index=False)
+
+if False:
+    print('-------------------------forecast-table-results-----------------------')
+    folder = "modem"
+    featL = pd.read_csv(baseDir + "/rem/raw/spike_"+folder+".csv.gz",compression="gzip")
+    feat = featL.copy()
+    #feat = t_r.diffDf(feat,tL=tL)
+    feat, normD = t_r.normDf(feat,perc=[5,95],lim=[-1,1],tL=tL)
+    serAv = feat.groupby('from_peak').agg(np.nanmean).reset_index()
+
+    importlib.reload(t_r)
+    importlib.reload(t_k)
+    importlib.reload(tls)
+    foreD = pd.read_csv(baseDir + "rem/raw/spike_forecast_sec.csv.gz")
+    peakD = pd.read_csv(baseDir + "rem/raw/spike_forecast_sec_max.csv.gz")
+    
+    fig, ax = plt.subplots(1,1)
+    t_v.plotBinned(peakD['from_peak'],peakD['spike_camera'],label="max forecast",alpha=0.01,isScatter=True,ax=ax)
+    t_v.plotBinned(peakD['max_camera'],peakD['spike_camera'],label="forecast time",alpha=0.01,isScatter=True,color="green",ax=ax)
+    plt.plot(serAv['from_peak'],serAv['camera_latency'],label="real",linewidth=3)
+    plt.legend()
+    plt.xlabel("seconds from peak")
+    plt.ylabel("latency normalized")
+    plt.xlim(-20,20)
+    plt.show()
+
+    fig, ax = plt.subplots(1,1)
+    t_v.plotBinned(peakD['from_peak'],peakD['spike_camera'],label="12 ahead",alpha=0.01,isScatter=True,ax=ax)
+    t_v.plotBinned(peakD['from_peak'],peakD['spike_camera_10'],label="10 ahead",alpha=0.01,isScatter=True,color="green",ax=ax)
+    t_v.plotBinned(peakD['from_peak'],peakD['spike_camera_6'],label="6 ahead",alpha=0.01,isScatter=True,color="red",ax=ax)
+    t_v.plotBinned(peakD['from_peak'],peakD['spike_camera_4'],label="4 ahead",alpha=0.01,isScatter=True,color="purple",ax=ax)
+    plt.plot(serAv['from_peak'],serAv['camera_latency'],label="average",linewidth=3)
+    plt.legend()
+    plt.xlabel("seconds from peak")
+    plt.ylabel("latency normalized")
+    plt.xlim(-20,20)
+    plt.show()
+
+    plt.title("accuracy on true positive on forecast")
+    threshold = np.mean(peakD.loc[peakD['from_peak'] < -6,'spike_camera'])
+    for x in [0.5,0.6,0.7,0.8,0.9]:
+        thre = threshold*x
+        peakD.loc[:,"true_positive"] = 1*(peakD['spike_camera'] > thre)
+        serL = np.unique(peakD['series'])
+        peakAcc = peakD.groupby('from_peak').agg(np.mean).reset_index()
+        peakMax = peakD.groupby('max_camera').agg(np.mean).reset_index()
+        plt.plot(peakAcc['from_peak'],peakAcc['true_positive'],label="forecast accuracy %.2f" % thre)
+        #plt.plot(peakMax['max_camera'],peakMax['true_positive'],label="spike forecast time accuracy")
+    plt.legend()
+    plt.minorticks_on()
+    plt.grid(True,axis='x',which="minor",ls=':',color='gray',linewidth=0.3)
+    plt.grid(True,axis='x',which="major")
+    plt.xlabel('seconds from peak')
+    plt.ylabel('true positive rate')
+    plt.show()
+    
+    for i in range(15):
+        s = np.random.choice(serL)
+        g = peakD[peakD['series'] == s]
+        plt.plot(g['from_peak'],g['spike_camera'],label="spike camera " + s,alpha=0.3)
+    #plt.legend()
+    plt.xlabel("from peak seconds")
+    plt.ylabel("spike")
+    plt.show()
+
+    startL = np.unique(foreD['start'])
+    g1 = foreD[foreD['series'] == np.random.choice(serL)]
+    for i in range(-10,10,1):
+        g = g1[g1['start'] == i]
+        plt.plot(g['from_peak'],g['fore_camera'],label="spike camera start %.0f" % i,alpha=0.3)
+    g = g1[g1['start'] == startL[0]]
+    plt.scatter(g1['from_peak'],g1['camera'],label="spike camera start %.0f" % i,alpha=1)
+    #plt.legend()
+    plt.xlabel("from peak seconds")
+    plt.ylabel("spike")
+    plt.show()
+

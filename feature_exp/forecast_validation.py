@@ -1,0 +1,108 @@
+import os, sys, gzip, random, json, datetime, re, io
+import pandas as pd 
+import numpy as np
+import matplotlib.pyplot as plt
+import scipy as sp
+
+dL = os.listdir(os.environ['LAV_DIR']+'/src/')
+sys.path = list(set(sys.path + [os.environ['LAV_DIR']+'/src/'+x for x in dL]))
+baseDir = os.environ['LAV_DIR']
+import lernia.train_reshape as t_r
+import lernia.train_viz as t_v
+import deep_lernia.train_keras as t_k
+import deep_lernia.train_longShort as tls
+import importlib
+
+folder = "august"
+folder = "modem"
+featL = pd.read_csv(baseDir + "/rem/raw/telemetry_"+folder+".csv.gz",compression="gzip")
+featL = featL.sort_values(['session_id','second'])
+xL = ['object_distance','brake_pressure','force_lon','wheel_speed','vehicle_ping','rtp_lost','rtp_late','modem_rtt','modem_tx','camera_jitter','room_ram','room_cpu','vehicle_ram','vehicle_cpu']
+xL = ['object_distance','force_lat','steering_wheel','wheel_speed','vehicle_ping','rtp_lost','rtp_late','modem_tx','vehicle_ram','vehicle_cpu']
+xL = [x for x in featL.columns if re.search("_si",x)]# + [x for x in featL.columns if re.search("_rss",x)]
+xL = xL + ['object_distance','brake_pressure','force_lon','wheel_speed','vehicle_ping','camera_jitter','room_ram','room_cpu','vehicle_ram','vehicle_cpu']
+yL = ['joystick_latency','camera_latency']
+tL = yL + xL
+print('-----------------------norm----------------------------')
+t = [datetime.datetime.fromtimestamp(x) for x in featL['second']]
+#t = featL['second'].apply(lambda x: datetime.datetime.fromtimestamp(x)).values
+setL = [x.isocalendar()[1] == 39 for x in t]
+feat = featL[setL]
+importlib.reload(t_r)
+#feat = t_r.diffDf(feat,tL=tL)
+feat, normD = t_r.normDf(feat,perc=[2,98],lim=[-1,1],tL=tL)
+n_in = 1
+
+if True:
+    print('------------------------------forecast-from-peak----------------------------')
+    importlib.reload(t_k)
+    importlib.reload(tls)
+    tK = tls.timeSeries(feat[tL])
+    #tK.scale(feature_range=(-1,1))
+    tK.loadModel(baseDir + "/rem/train/lstm_camera_tmp")
+    tK.model.compile(loss='mean_squared_error', optimizer='adam')
+
+    ahead = 6
+    time_bin = 30
+    peakL = []
+    k = 0
+    serL = np.unique(feat['session_id'])
+    for i, g in feat.groupby('session_id'):
+        print("process %.2f" % float(k/len(serL)))
+        k += 1
+        for j in range(len(g)):
+            X_test = g.iloc[j:j+ahead]
+            X_valid = g.iloc[j:j+time_bin]
+            sec = X_test['second'].values[0]
+            y = X_valid[yL[0]].values
+            y_fore = tK.forecast(X_test[tL])
+            peakL.append({"session_id":i,"second":sec,"y":y[0],"y_max":max(y),"y_max6":max(y[:6]),"y_max12":max(y[:12]),"y_fore":max(y_fore[:,0])})
+        peakD = pd.DataFrame(peakL)
+        peakD.to_csv(baseDir + "/rem/raw/spike_validation.csv.gz",index=False)
+
+if False:
+    print('---------------------------handover-kpi---------------------------')
+    importlib.reload(t_r)
+    importlib.reload(t_k)
+    importlib.reload(tls)
+    peakD = pd.read_csv(baseDir + "rem/raw/spike_validation.csv.gz")
+
+    tL = [x for x in peakD.columns if re.search("y_",x)]
+    t_v.plotTimeSeries(peakD[tL])
+    plt.show()
+
+    thre_fore = np.mean(peakD['y_fore']) + 0.6
+    thre_real = np.mean(peakD['y_max6']) + 0.6
+    real3, fore3, real30, fore30 = [], [], [], []
+    for i in range(len(peakD)):
+        X_test = peakD.iloc[i:i+3]
+        real3.append(1*(max(X_test['y_max6']) > thre_real))
+        fore3.append(1*(max(X_test['y_fore']) > thre_fore))
+        X_test = peakD.iloc[i:i+30]
+        real30.append(1*(max(X_test['y_max6']) > thre_real))
+        fore30.append(1*(max(X_test['y_fore']) > thre_fore))
+        
+    peakD.loc[:,"spike_real3"]  = real3
+    peakD.loc[:,"spike_fore3"]  = fore3
+    peakD.loc[:,"spike_real30"] = real30
+    peakD.loc[:,"spike_fore30"] = fore30
+    
+    plt.title("accuracy on true positive on forecast")
+    cm = t_v.plotConfMat(peakD['spike_real3'],peakD['spike_fore3'])
+    t_v.plotHeatmap(cm/cm.sum())
+    plt.title("confusion matrix")
+    plt.show()
+
+    plt.title("accuracy on true positive on forecast")
+    cm = t_v.plotConfMat(peakD['spike_real3'],peakD['spike_fore3'])
+    t_v.plotHeatmap(cm/cm.sum())
+    plt.title("confusion matrix")
+    plt.show()
+
+
+    cm = t_v.plotConfMat(peakD['spike_real30'],peakD['spike_fore30'])
+    t_v.plotHeatmap(cm/cm.sum())
+    plt.title("confusion matrix")
+    plt.show()
+
+

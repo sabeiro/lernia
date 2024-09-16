@@ -1,0 +1,7 @@
+{
+    "latency":{
+	"db":"ree-cloud-data-prod"
+	,"tableL":["telemetry","network_log","session","incident"]
+	
+    }
+}
